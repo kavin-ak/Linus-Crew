@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Campus Gate ANPR — Visitor and Security Portals
 
 A local hackathon prototype with a public visitor registration portal and a separate authenticated guard portal. The backend uses FastAPI, OpenCV, EasyOCR, SQLAlchemy, and SQLite; the frontend uses React and Vite.
@@ -100,3 +101,7 @@ Open `http://localhost:5173`. Keep both terminals running.
 - An exact staff/college plate match is shown as `GRANTED` and written to `fleet_vehicle_logs`; repeated webcam/video frames from the same guard are suppressed for 10 seconds.
 - If a plate is absent from both today's visitor registrations and `fleet.db`, the scanner asks the guard whether permission was granted. **Yes** records a `MANUALLY_GRANTED` entry in the dedicated log. **No** records the denial in the general scan history and does not add a fleet-log entry. The manually authorized vehicle is not automatically added to the permanent staff/college plate database, so the guard must decide again on a future arrival unless an administrator registers it.
 - Back up both `gate.db` and `fleet.db`. This remains a prototype; manually confirm the plate and the driver's authorization before selecting Yes.
+=======
+# Linus-Crew
+AI-Powered ANPR 
+>>>>>>> 4f42fcd06b5516ddc4c67b9a247a272e76314d70
