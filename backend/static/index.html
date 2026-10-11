@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ANPR Step 1 Test</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 960px; margin: 20px auto; padding: 0 16px; color: #222; }
+  h1 { font-size: 20px; } h2 { font-size: 16px; margin-top: 28px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  form { display: grid; grid-template-columns: 140px 1fr; gap: 6px 10px; max-width: 520px; }
+  input, textarea, button { font: inherit; padding: 6px; }
+  button { cursor: pointer; }
+  #result { margin-top: 12px; padding: 24px; border-radius: 8px; text-align: center; color: #fff; display: none; }
+  #result .big { font-size: 40px; font-weight: 800; letter-spacing: 1px; }
+  #result .plate { font-family: monospace; font-size: 28px; margin-top: 8px; }
+  #result img { max-height: 90px; margin-top: 10px; border: 3px solid #fff; background: #fff; }
+  .GRANTED { background: #15803d; } .UNREGISTERED { background: #b91c1c; }
+  .CHECK_MANUALLY { background: #d97706; } .NO_PLATE { background: #6b7280; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  td, th { border: 1px solid #ddd; padding: 4px 6px; text-align: left; }
+  .muted { color: #666; font-size: 13px; } .err { color: #b91c1c; } .ok { color: #15803d; }
+  #preview { max-width: 100%; max-height: 260px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<h1>ANPR Gate: Step 1 backend test page</h1>
+<p class="muted" id="health">Checking backend…</p>
+
+<h2>1. Scan an image</h2>
+<input type="file" id="file" accept="image/*">
+<span class="muted" id="timing"></span>
+<div><img id="preview" alt=""></div>
+<div id="result"></div>
+<p class="muted" id="raw"></p>
+
+<h2>2. Register a visitor</h2>
+<form id="reg">
+  <label>Name</label><input name="name" required>
+  <label>Vehicle number</label><input name="vehicle_number" placeholder="TN37AB1234" required>
+  <label>Mobile</label><input name="mobile" placeholder="10 digits" required>
+  <label>Address</label><textarea name="address" rows="2" required></textarea>
+  <label>Visitors</label><input name="num_visitors" type="number" min="1" max="10" value="1" required>
+  <label>Visit date</label><input name="visit_date" type="date" required>
+  <span></span><button>Register</button>
+</form>
+<p id="regmsg"></p>
+
+<h2>3. Registrations <button id="refresh">Refresh</button></h2>
+<table id="regs"><thead><tr><th>Plate</th><th>Name</th><th>Mobile</th><th>Visitors</th><th>Date</th></tr></thead><tbody></tbody></table>
+
+<h2>4. Recent scans</h2>
+<table id="scans"><thead><tr><th>Time</th><th>Plate</th><th>Status</th><th>Conf</th><th>Visitor</th></tr></thead><tbody></tbody></table>
+
+<script>
+const API = location.origin.startsWith("http") ? location.origin : "http://localhost:8000";
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+fetch(API + "/health").then(r => r.json()).then(h => {
+  $("#health").textContent = `Backend OK · today (IST) = ${h.today_ist}`;
+  $('input[name="visit_date"]').value = h.today_ist;
+  $('input[name="visit_date"]').min = h.today_ist;
+}).catch(() => $("#health").innerHTML = '<span class="err">Backend not reachable</span>');
+
+$("#file").addEventListener("change", async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  $("#preview").src = URL.createObjectURL(f);
+  $("#result").style.display = "none"; $("#timing").textContent = "Reading plate…";
+  const fd = new FormData(); fd.append("file", f);
+  const t = performance.now();
+  const r = await fetch(API + "/scan", { method: "POST", body: fd });
+  const d = await r.json();
+  $("#timing").textContent = `round trip ${Math.round(performance.now() - t)} ms (OCR ${d.ms} ms)`;
+  showResult(d); loadScans();
+});
+
+function showResult(d) {
+  const el = $("#result");
+  const titles = { GRANTED: "ACCESS GRANTED", UNREGISTERED: "UNREGISTERED",
+                   CHECK_MANUALLY: "CHECK MANUALLY", NO_PLATE: "NO PLATE READ" };
+  let sub = "";
+  if (d.status === "GRANTED") sub = `${esc(d.visitor.name)} · ${d.visitor.num_visitors} visitor(s)`;
+  if (d.status === "CHECK_MANUALLY") sub = `Close to ${esc(d.near_match.vehicle_number)} (${esc(d.near_match.name)}): verify plate by eye`;
+  if (d.status === "NO_PLATE") sub = "Try a closer / sharper image";
+  el.className = d.status;
+  el.innerHTML = `<div class="big">${titles[d.status]}</div>
+    ${d.plate ? `<div class="plate">${esc(d.plate)}</div>` : ""}
+    ${sub ? `<div style="font-size:20px;margin-top:6px">${sub}</div>` : ""}
+    ${d.crop_b64 ? `<img src="data:image/jpeg;base64,${d.crop_b64}">` : ""}
+    ${d.plate ? `<div style="margin-top:6px;opacity:.85">confidence ${d.confidence}</div>` : ""}`;
+  el.style.display = "block";
+  $("#raw").textContent = "Raw OCR: " + (d.raw_text || "(nothing)");
+}
+
+$("#reg").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const body = Object.fromEntries(new FormData(e.target));
+  body.num_visitors = Number(body.num_visitors);
+  const r = await fetch(API + "/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const d = await r.json();
+  const msg = $("#regmsg");
+  if (r.ok) { msg.className = "ok"; msg.textContent = `${d.message} (${d.registration.vehicle_number})`; e.target.reset(); loadRegs(); fetch(API + "/health").then(r => r.json()).then(h => $('input[name="visit_date"]').value = h.today_ist); }
+  else { msg.className = "err"; msg.textContent = typeof d.detail === "string" ? d.detail : d.detail.map(x => `${x.loc.at(-1)}: ${x.msg.replace("Value error, ", "")}`).join(" · "); }
+});
+
+async function loadRegs() {
+  const rows = await (await fetch(API + "/registrations")).json();
+  $("#regs tbody").innerHTML = rows.map(r => `<tr><td><b>${esc(r.vehicle_number)}</b></td><td>${esc(r.name)}</td><td>${esc(r.mobile)}</td><td>${r.num_visitors}</td><td>${r.visit_date}</td></tr>`).join("");
+}
+async function loadScans() {
+  const rows = await (await fetch(API + "/scans")).json();
+  $("#scans tbody").innerHTML = rows.map(s => `<tr><td>${s.scanned_at}</td><td>${esc(s.plate)}</td><td class="${s.status}" style="color:#fff">${s.status}</td><td>${s.confidence}</td><td>${esc(s.visitor_name)}</td></tr>`).join("");
+}
+$("#refresh").onclick = loadRegs;
+loadRegs(); loadScans();
+</script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+backend/gate.db
+backend/gate.db-shm
+backend/gate.db-wal
+.env
+
+# Node
+node_modules/
+frontend/dist/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+backend/fleet.db
+backend/fleet.db-shm
+backend/fleet.db-wal
